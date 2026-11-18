@@ -5,7 +5,7 @@
 import FlutterMacOS
 import Foundation
 
-import biometric_storage
+import tom_biometric_storage
 
 func RegisterGeneratedPlugins(registry: FlutterPluginRegistry) {
   BiometricStoragePlugin.register(with: registry.registrar(forPlugin: "BiometricStoragePlugin"))
