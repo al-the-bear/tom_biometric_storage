@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'dart:ffi';
-import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:flutter/services.dart';
 import 'package:logging/logging.dart';
 import 'package:win32/win32.dart';
 
@@ -10,6 +10,17 @@ import './biometric_storage.dart';
 
 final _logger = Logger('biometric_storage_win32');
 
+/// Windows: values kept in the Credential Manager (wincred). A store with
+/// [StorageFileInitOptions.windowsHello] (and `authenticationRequired`) keeps
+/// them sealed under a
+/// key bound to Windows Hello: each store has a Hello key credential of its
+/// own (`KeyCredentialManager`), the SHA-256 of its signature of a fixed
+/// challenge is the AES-256-GCM key, so the value cannot be opened without
+/// passing Hello (the native half, `windows/windows_hello.cpp`). A write
+/// creates the key credential when there is none, which shows the Hello
+/// prompt; so does every read. Without Hello set up, [canAuthenticate]
+/// answers [CanAuthenticateResponse.errorHwUnavailable] and such a store
+/// refuses to write. The prompt's text is Windows' own.
 class Win32BiometricStoragePlugin extends BiometricStorage {
   Win32BiometricStoragePlugin() : super.create();
 
@@ -17,10 +28,22 @@ class Win32BiometricStoragePlugin extends BiometricStorage {
 
   static const _userName = 'flutter.biometric_storage';
 
+  /// The native half's channel.
+  static const MethodChannel _hello = MethodChannel(
+    'biometric_storage/windows_hello',
+  );
+
+  /// What a sealed value starts with in the credential blob (the rest is
+  /// base64 of the sealed bytes).
+  static const _sealedPrefix = 'hello:v1:';
+
   /// Names handed out by [getStorage] in this runtime, so that [forceInit] can
   /// mean what the API documents. Windows has no per-store native handle to
   /// hang this off, unlike the method-channel platforms.
   final _initialized = <String>{};
+
+  /// The stores opened with `authenticationRequired` (by prefixed name).
+  final _helloStores = <String>{};
 
   /// Registers this class as the default instance of [BiometricStorage].
   static void registerWith() {
@@ -31,8 +54,39 @@ class Win32BiometricStoragePlugin extends BiometricStorage {
   Future<CanAuthenticateResponse> canAuthenticate({
     StorageFileInitOptions? options,
   }) async {
-    return CanAuthenticateResponse.errorHwUnavailable;
+    try {
+      final supported = await _hello.invokeMethod<bool>('isSupported');
+      return supported == true
+          ? CanAuthenticateResponse.success
+          : CanAuthenticateResponse.errorHwUnavailable;
+    } on MissingPluginException {
+      return CanAuthenticateResponse.errorHwUnavailable;
+    } on PlatformException catch (e) {
+      _logger.warning('Windows Hello: ${e.code}');
+      return CanAuthenticateResponse.errorHwUnavailable;
+    }
   }
+
+  /// Runs a native Hello call, its errors turned into the plugin's.
+  Future<T?> _helloCall<T>(String method, Map<String, Object?> args) async {
+    try {
+      return await _hello.invokeMethod<T>(method, args);
+    } on PlatformException catch (e) {
+      final code = _windowsAuthCodes[e.code];
+      if (code != null) throw AuthException(code, e.message ?? e.code);
+      throw BiometricStorageException(
+        'Windows Hello: ${e.message ?? e.code}',
+        code: BiometricStorageExceptionCode.storageFailure,
+      );
+    }
+  }
+
+  static const _windowsAuthCodes = {
+    'AuthError:UserCanceled': AuthExceptionCode.userCanceled,
+    'AuthError:KeyInvalidated': AuthExceptionCode.keyInvalidated,
+    'AuthError:LockoutPermanent': AuthExceptionCode.lockoutPermanent,
+    'AuthError:AuthFailed': AuthExceptionCode.authFailed,
+  };
 
   @override
   Future<BiometricStorageFile> getStorage(
@@ -53,6 +107,12 @@ class Win32BiometricStoragePlugin extends BiometricStorage {
         code: BiometricStorageExceptionCode.alreadyInitialized,
       );
     }
+    if ((options?.authenticationRequired ?? true) &&
+        (options?.windowsHello ?? false)) {
+      _helloStores.add(prefixedName);
+    } else {
+      _helloStores.remove(prefixedName);
+    }
     return BiometricStorageFile(this, prefixedName, promptInfo);
   }
 
@@ -61,6 +121,59 @@ class Win32BiometricStoragePlugin extends BiometricStorage {
 
   @override
   Future<bool> delete(String name, PromptInfo promptInfo) async {
+    final deleted = _deleteBlob(name);
+    if (_helloStores.contains(name)) {
+      await _helloCall<bool>('deleteKey', {'name': name});
+    }
+    return deleted;
+  }
+
+  @override
+  Future<String?> read(String name, PromptInfo promptInfo) async {
+    final blob = _readBlob(name);
+    if (blob == null || !_helloStores.contains(name)) return blob;
+    if (!blob.startsWith(_sealedPrefix)) {
+      // Written before the store asked for Windows Hello: not released
+      // without it.
+      throw AuthException(
+        AuthExceptionCode.keyInvalidated,
+        'the value of $name is not sealed by Windows Hello',
+      );
+    }
+    final plain = await _helloCall<Uint8List>('unprotect', {
+      'name': name,
+      'data': base64.decode(blob.substring(_sealedPrefix.length)),
+    });
+    if (plain == null) return null;
+    try {
+      return utf8.decode(plain);
+    } finally {
+      plain.fillRange(0, plain.length, 0);
+    }
+  }
+
+  @override
+  Future<void> write(String name, String content, PromptInfo promptInfo) async {
+    if (!_helloStores.contains(name)) return _writeBlob(name, content);
+    final plain = Uint8List.fromList(utf8.encode(content));
+    try {
+      final sealed = await _helloCall<Uint8List>('protect', {
+        'name': name,
+        'data': plain,
+      });
+      if (sealed == null) {
+        throw BiometricStorageException(
+          'Windows Hello sealed nothing',
+          code: BiometricStorageExceptionCode.storageFailure,
+        );
+      }
+      _writeBlob(name, '$_sealedPrefix${base64.encode(sealed)}');
+    } finally {
+      plain.fillRange(0, plain.length, 0);
+    }
+  }
+
+  bool _deleteBlob(String name) {
     return using((arena) {
       final result = CredDelete(
         name.toPcwstr(allocator: arena),
@@ -82,8 +195,7 @@ class Win32BiometricStoragePlugin extends BiometricStorage {
     });
   }
 
-  @override
-  Future<String?> read(String name, PromptInfo promptInfo) async {
+  String? _readBlob(String name) {
     _logger.finer('read($name)');
     return using((arena) {
       final credentialPointer = arena<Pointer<CREDENTIAL>>();
@@ -121,8 +233,7 @@ class Win32BiometricStoragePlugin extends BiometricStorage {
     });
   }
 
-  @override
-  Future<void> write(String name, String content, PromptInfo promptInfo) async {
+  void _writeBlob(String name, String content) {
     _logger.finer('write($name)');
     using((arena) {
       final blob = utf8.encode(content);

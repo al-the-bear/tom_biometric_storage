@@ -129,6 +129,14 @@ enum AuthExceptionCode {
   /// of them. Treat the value as lost only after a deliberate, successful
   /// re-authentication has failed to produce it.
   authFailed,
+
+  /// The check cannot run on this device now: no biometrics enrolled, no
+  /// passcode set, the sensor unavailable (a closed lid, a remote session).
+  /// The value is intact; ask for the user's password instead.
+  ///
+  /// Reported by the gate-only form on macOS
+  /// ([StorageFileInitOptions.darwinGateOnly]) and by Windows Hello.
+  unavailable,
 }
 
 const _authErrorCodeMapping = {
@@ -139,6 +147,7 @@ const _authErrorCodeMapping = {
   'AuthError:LockoutPermanent': AuthExceptionCode.lockoutPermanent,
   'AuthError:KeyInvalidated': AuthExceptionCode.keyInvalidated,
   'AuthError:AuthFailed': AuthExceptionCode.authFailed,
+  'AuthError:Unavailable': AuthExceptionCode.unavailable,
 };
 
 /// Why a [BiometricStorageException] was raised.
@@ -207,6 +216,8 @@ class StorageFileInitOptions {
     this.androidBiometricOnly = true,
     this.darwinBiometricOnly = true,
     this.darwinKeychainAccessGroup,
+    this.darwinGateOnly = false,
+    this.windowsHello = false,
   }) : androidAuthenticationValidityDuration =
            androidAuthenticationValidityDuration ??
            (authenticationValidityDurationSeconds <= 0
@@ -275,6 +286,35 @@ class StorageFileInitOptions {
   /// https://developer.apple.com/documentation/security/sharing-access-to-keychain-items-among-a-collection-of-apps
   final String? darwinKeychainAccessGroup;
 
+  /// Only for macOS: keep the item without access control in the file-based
+  /// login keychain, and ask LocalAuthentication (Touch ID, or the password
+  /// with [darwinBiometricOnly] `false`) before every read.
+  ///
+  /// **The check guards the read; nothing binds the item to it**: a process
+  /// running as the user that reads the login keychain directly gets the
+  /// value without the check. It is the form for an app that cannot use the
+  /// data-protection keychain — an ad-hoc signed build has no
+  /// `keychain-access-groups` entitlement, and its writes there fail with
+  /// `errSecMissingEntitlement` (-34018). [BiometricStorage.darwinKeyBoundAvailable]
+  /// tells the two apart. Say to the user that this is the weaker form.
+  ///
+  /// Writes and deletes show no prompt. An item written in one form is a
+  /// different item from one written in the other.
+  final bool darwinGateOnly;
+
+  /// Only for Windows: seal the value under a key bound to Windows Hello
+  /// (with [authenticationRequired]). Each store gets a Hello key credential
+  /// of its own; the SHA-256 of its signature of a fixed challenge is the
+  /// AES-256-GCM key, so the value cannot be opened without passing Hello.
+  /// The sealed value is kept in the Credential Manager. A write creates the
+  /// key credential when there is none and shows the Hello prompt, and so
+  /// does every read; the prompt's text is Windows' own. A value written
+  /// before this was set is refused as [AuthExceptionCode.keyInvalidated].
+  ///
+  /// Off by default: without it Windows keeps the value in the Credential
+  /// Manager with no prompt, as before.
+  final bool windowsHello;
+
   Map<String, dynamic> toJson() => <String, dynamic>{
     'androidAuthenticationValidityDurationSeconds':
         androidAuthenticationValidityDuration?.inSeconds,
@@ -286,6 +326,8 @@ class StorageFileInitOptions {
     'androidBiometricOnly': androidBiometricOnly,
     'darwinBiometricOnly': darwinBiometricOnly,
     'darwinKeychainAccessGroup': darwinKeychainAccessGroup,
+    'darwinGateOnly': darwinGateOnly,
+    'windowsHello': windowsHello,
   };
 }
 
@@ -402,6 +444,13 @@ abstract class BiometricStorage extends PlatformInterface {
   /// --daemonize --login " label="unconfined")
   Future<bool> linuxCheckAppArmorError();
 
+  /// Whether this app can keep items in the data-protection keychain, which
+  /// the key-bound form on iOS and macOS needs (`.biometryCurrentSet` access
+  /// control). Always true on iOS; on macOS false for an app without the
+  /// `keychain-access-groups` entitlement (an ad-hoc signed build), which
+  /// then uses [StorageFileInitOptions.darwinGateOnly]. False elsewhere.
+  Future<bool> darwinKeyBoundAvailable() async => false;
+
   /// Retrieves the given biometric storage file.
   /// Each store is completely separated, and has it's own encryption and
   /// biometric lock.
@@ -435,6 +484,15 @@ class MethodChannelBiometricStorage extends BiometricStorage {
   MethodChannelBiometricStorage() : super.create();
 
   static const MethodChannel _channel = MethodChannel('biometric_storage');
+
+  @override
+  Future<bool> darwinKeyBoundAvailable() async {
+    if (kIsWeb || !const {'ios', 'macos'}.contains(operatingSystem)) {
+      return false;
+    }
+    return await _channel.invokeMethod<bool>('darwinKeyBoundAvailable') ??
+        false;
+  }
 
   @override
   Future<CanAuthenticateResponse> canAuthenticate({

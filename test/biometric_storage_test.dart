@@ -245,6 +245,13 @@ void main() {
       );
     });
 
+    test('Unavailable becomes unavailable', () async {
+      await expectReadCode(
+        'AuthError:Unavailable',
+        AuthExceptionCode.unavailable,
+      );
+    });
+
     test('an AuthError this version does not know becomes unknown', () async {
       // The fallback that makes every case above load-bearing: a native code
       // the mapping has no key for degrades quietly instead of failing, so a
@@ -297,6 +304,18 @@ void main() {
       );
     });
 
+    test('the gate-only form and Windows Hello are off by default and '
+        'passed to the platform when set', () {
+      expect(StorageFileInitOptions().toJson()['darwinGateOnly'], isFalse);
+      expect(StorageFileInitOptions().toJson()['windowsHello'], isFalse);
+      final options = StorageFileInitOptions(
+        darwinGateOnly: true,
+        windowsHello: true,
+      );
+      expect(options.toJson()['darwinGateOnly'], isTrue);
+      expect(options.toJson()['windowsHello'], isTrue);
+    });
+
     test('passes the keychain access group to the platform', () {
       final options = StorageFileInitOptions(
         darwinKeychainAccessGroup: 'ABCDE12345.com.example.app',
@@ -306,5 +325,21 @@ void main() {
         'ABCDE12345.com.example.app',
       );
     });
+  });
+
+  group('darwinKeyBoundAvailable', () {
+    test(
+      'asks the platform on iOS and macOS, answers false elsewhere',
+      () async {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, (methodCall) async {
+              if (methodCall.method == 'darwinKeyBoundAvailable') return false;
+              throw PlatformException(code: 'NotImplemented');
+            });
+        final answer = await MethodChannelBiometricStorage()
+            .darwinKeyBoundAvailable();
+        expect(answer, isFalse);
+      },
+    );
   });
 }

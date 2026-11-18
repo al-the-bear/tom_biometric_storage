@@ -1,3 +1,27 @@
+## Unreleased
+
+* macos: `StorageFileInitOptions.darwinGateOnly`, the gate-only form for an
+  app that cannot use the data-protection keychain (an ad-hoc signed build has
+  no `keychain-access-groups` entitlement, and its writes there fail with
+  `errSecMissingEntitlement`): the item is kept without access control in the
+  login keychain, and a read asks LocalAuthentication first. A name never
+  written reads `null` without a prompt. The check guards the read; nothing
+  binds the item to it, and the documentation says so.
+  `BiometricStorage.darwinKeyBoundAvailable()` tells the two forms apart with a
+  probe write into the data-protection keychain (no prompt).
+* windows: Windows Hello. `StorageFileInitOptions.windowsHello` seals a
+  store's value under a key that exists only after Hello has signed: a Hello
+  key credential per store (`KeyCredentialManager`, native C++/WinRT in
+  `windows/`), the SHA-256 of its deterministic signature of a fixed challenge
+  as the AES-256-GCM key (BCrypt), the sealed value in the credential store as
+  before. `canAuthenticate()` answers `success` where Hello is set up instead
+  of always `errorHwUnavailable`. Off by default, so existing stores keep
+  working without a prompt; a value written before the option was set is
+  refused as `keyInvalidated`. `delete()` removes the key credential too.
+* `AuthExceptionCode.unavailable`: the check cannot run now (no enrollment, no
+  passcode, the sensor unavailable); the value is intact. Reported by the
+  gate-only form.
+
 ## 6.0.0-dev.10
 
 * android: `delete()` now removes the keystore key even when there is nothing

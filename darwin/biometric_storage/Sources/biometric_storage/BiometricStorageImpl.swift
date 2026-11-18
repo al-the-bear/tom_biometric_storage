@@ -19,6 +19,7 @@ class InitOptions {
     authenticationRequired = params["authenticationRequired"] as? Bool
     darwinBiometricOnly = params["darwinBiometricOnly"] as? Bool
     darwinKeychainAccessGroup = params["darwinKeychainAccessGroup"] as? String
+    darwinGateOnly = params["darwinGateOnly"] as? Bool ?? false
   }
   let darwinTouchIDAuthenticationAllowableReuseDuration: Int?
   let darwinTouchIDAuthenticationForceReuseContextDuration: Int?
@@ -27,6 +28,12 @@ class InitOptions {
   /// kSecAttrAccessGroup, so an app extension of the same app can read the
   /// item. Part of the item's identity — see the dart side for the caveats.
   let darwinKeychainAccessGroup: String?
+  /// The gate-only form (macOS): the item is kept without access control in
+  /// the file-based login keychain, and a read asks LocalAuthentication first.
+  /// For an app that cannot use the data-protection keychain (an ad-hoc signed
+  /// build has no `keychain-access-groups` entitlement). The check guards the
+  /// read; nothing binds the item to it. See the dart side.
+  let darwinGateOnly: Bool
 }
 
 class IOSPromptInfo {
@@ -83,7 +90,9 @@ class BiometricStorageImpl {
       cb(file)
     }
     
-    if ("canAuthenticate" == call.method) {
+    if ("darwinKeyBoundAvailable" == call.method) {
+      result(keyBoundAvailable())
+    } else if ("canAuthenticate" == call.method) {
       requiredArg("options") { options in
         let initOptions = InitOptions(params: options)
         canAuthenticate(options: initOptions, result: result)
@@ -160,6 +169,33 @@ class BiometricStorageImpl {
     }
   }
   
+
+  /// Whether this app can keep an item in the data-protection keychain, which
+  /// the key-bound form needs: false when the write is refused for a missing
+  /// entitlement (`errSecMissingEntitlement`, an ad-hoc signed macOS build).
+  /// A probe item is written without access control (no prompt) and removed.
+  private func keyBoundAvailable() -> Bool {
+    #if os(macOS)
+      guard #available(macOS 10.15, *) else { return false }
+      let query: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: "flutter_biometric_storage.probe",
+        kSecAttrAccount as String: "probe",
+        kSecUseDataProtectionKeychain as String: true,
+      ]
+      var add = query
+      add[kSecValueData as String] = Data([1])
+      let status = SecItemAdd(add as CFDictionary, nil)
+      if status == errSecSuccess || status == errSecDuplicateItem {
+        SecItemDelete(query as CFDictionary)
+        return true
+      }
+      hpdebug("data-protection keychain probe: \(status)")
+      return false
+    #else
+      return true
+    #endif
+  }
 
   private func canAuthenticate(options: InitOptions, result: @escaping StorageCallback) {
     var error: NSError?
@@ -285,7 +321,7 @@ class BiometricStorageFile {
       // written with it.
       query[kSecAttrAccessGroup as String] = accessGroup
     }
-    if initOptions.authenticationRequired {
+    if initOptions.authenticationRequired && !initOptions.darwinGateOnly {
       guard let access = accessControl(result) else {
         return nil
       }
@@ -339,6 +375,10 @@ class BiometricStorageFile {
     // written into an error rather than the nil that means "nothing stored".
     // The check in handleOSStatusError sees the lockout either way, and only
     // once the attempt has actually failed.
+    if initOptions.authenticationRequired && initOptions.darwinGateOnly {
+      readGateOnly(result, promptInfo)
+      return
+    }
     guard var query = baseQuery(result) else {
       return;
     }
@@ -359,6 +399,11 @@ class BiometricStorageFile {
       handleOSStatusError(status, result, "Error retrieving item. \(status)")
       return
     }
+    deliver(item, result)
+  }
+
+  /// Answers the item's text, or the error of unexpected data.
+  private func deliver(_ item: CFTypeRef?, _ result: @escaping StorageCallback) {
     guard let existingItem = item as? [String : Any],
       let data = existingItem[kSecValueData as String] as? Data,
       let dataString = String(data: data, encoding: String.Encoding.utf8)
@@ -393,7 +438,7 @@ class BiometricStorageFile {
       return;
     }
 
-    if (initOptions.authenticationRequired) {
+    if (initOptions.authenticationRequired && !initOptions.darwinGateOnly) {
       query.merge([
         kSecUseAuthenticationContext as String:
           authenticationContext(reason: promptInfo.saveTitle),
@@ -419,6 +464,63 @@ class BiometricStorageFile {
     result(nil)
   }
   
+  /// The gate-only read: no prompt for a name that was never written; else
+  /// LocalAuthentication's check with the access reason, then the item.
+  private func readGateOnly(_ result: @escaping StorageCallback, _ promptInfo: IOSPromptInfo) {
+    guard var query = baseQuery(result) else {
+      return
+    }
+    query[kSecMatchLimit as String] = kSecMatchLimitOne
+    query[kSecReturnAttributes as String] = true
+    let exists = SecItemCopyMatching(query as CFDictionary, nil)
+    guard exists != errSecItemNotFound else {
+      result(nil)
+      return
+    }
+    guard exists == errSecSuccess else {
+      handleOSStatusError(exists, result, "Error retrieving item. \(exists)")
+      return
+    }
+    let context = authenticationContext(reason: promptInfo.accessTitle)
+    let policy: LAPolicy = initOptions.darwinBiometricOnly
+      ? .deviceOwnerAuthenticationWithBiometrics : .deviceOwnerAuthentication
+    context.evaluatePolicy(policy, localizedReason: promptInfo.accessTitle ?? " ") { ok, error in
+      DispatchQueue.main.async {
+        guard ok else {
+          result(self.storageError(
+            Self.authErrorCode(error),
+            "Authentication failed: \(String(describing: error))", nil))
+          return
+        }
+        query[kSecReturnData as String] = true
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess else {
+          self.handleOSStatusError(status, result, "Error retrieving item. \(status)")
+          return
+        }
+        self.deliver(item, result)
+      }
+    }
+  }
+
+  /// The plugin's code for LocalAuthentication's error of a failed check.
+  private static func authErrorCode(_ error: Error?) -> String {
+    guard let error = error else { return "AuthError:AuthFailed" }
+    switch LAError(_nsError: error as NSError).code {
+    case .userCancel:
+      return "AuthError:UserCanceled"
+    case .appCancel, .systemCancel:
+      return "AuthError:Canceled"
+    case .biometryLockout:
+      return "AuthError:LockoutPermanent"
+    case .biometryNotAvailable, .biometryNotEnrolled, .passcodeNotSet:
+      return "AuthError:Unavailable"
+    default:
+      return "AuthError:AuthFailed"
+    }
+  }
+
   private func handleOSStatusError(_ status: OSStatus, _ result: @escaping StorageCallback, _ message: String) {
     var errorMessage: String? = nil
     if #available(iOS 11.3, OSX 10.12, *) {

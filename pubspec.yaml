@@ -53,6 +53,8 @@ flutter:
         # barrel, which re-exports Win32BiometricStoragePlugin. (The `fileName`
         # key that used to sit here is a web-only key and was never read.)
         dartPluginClass: Win32BiometricStoragePlugin
+        # The native half of Windows Hello (windows/windows_hello.cpp).
+        pluginClass: BiometricStoragePluginCApi
       web:
         pluginClass: BiometricStoragePluginWeb
         fileName: src/biometric_storage_web.dart

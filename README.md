@@ -10,9 +10,19 @@ store passwords, secret keys, etc. but not massive amounts
 of data.
 
 * Android: Uses androidx with KeyStore.
-* iOS and MacOS: LocalAuthentication with KeyChain.
+* iOS and MacOS: LocalAuthentication with KeyChain. On macOS an app without
+  the `keychain-access-groups` entitlement (an ad-hoc signed build) cannot use
+  the data-protection keychain; `darwinKeyBoundAvailable()` says so, and
+  `StorageFileInitOptions(darwinGateOnly: true)` keeps the item in the login
+  keychain behind a LocalAuthentication check instead. That is a weaker form:
+  the check guards the read, but nothing binds the item to it.
 * Linux: Stores values in Keyring using libsecret. (No biometric authentication support).
 * Windows: Uses [wincred.h to read/write into the credential store](https://docs.microsoft.com/en-us/windows/win32/api/wincred/).
+  With `StorageFileInitOptions(windowsHello: true)` the value is sealed under
+  a key bound to Windows Hello: each store has a Hello key credential
+  (`KeyCredentialManager`), and the SHA-256 of its signature of a fixed
+  challenge is the AES-256-GCM key, so the value does not open without
+  passing Hello. `canAuthenticate()` answers `success` where Hello is set up.
 * Web: **Warning** Uses unauthenticated, **unencrypted** storage in localStorage.
   If you have a better idea for secure storage on web platform, [please open an Issue](https://github.com/authpass/biometric_storage/issues).
 
