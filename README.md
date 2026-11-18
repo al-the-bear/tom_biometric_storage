@@ -1,3 +1,15 @@
+# tom_biometric_storage
+
+> **The Tom Framework's fork of [biometric_storage](https://github.com/authpass/biometric_storage)**
+> (MIT, Copyright 2019 Herbert Poul; the licence is kept as it is). It is the
+> upstream package with Windows Hello (key-bound), a gate-only form for
+> ad-hoc signed macOS apps, and `lib/tom_gated_secret_store.dart`: the
+> `TomGatedSecretStore` of `tom_core_storage` over it, which the Tom Secrets
+> Manager's OS unlock uses. The Windows Hello and macOS changes are offered
+> upstream; the package name and the adapter are this fork's own. Import
+> `package:tom_biometric_storage/tom_biometric_storage.dart` (or
+> `.../biometric_storage.dart`) and `.../tom_gated_secret_store.dart`.
+
 # biometric_storage
 
 [![Pub](https://img.shields.io/pub/v/biometric_storage?color=green)](https://pub.dev/packages/biometric_storage/)

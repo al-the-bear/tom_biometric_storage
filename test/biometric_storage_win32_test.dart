@@ -6,8 +6,8 @@ library;
 // analyzer resolves to that stub, so calls through it would not type-check.
 // biometric_storage_test.dart keeps the barrel import, which is what makes the
 // bindings compile on every host.
-import 'package:biometric_storage/src/biometric_storage.dart';
-import 'package:biometric_storage/src/biometric_storage_win32.dart';
+import 'package:tom_biometric_storage/src/biometric_storage.dart';
+import 'package:tom_biometric_storage/src/biometric_storage_win32.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// The only place the win32 bindings are *executed* rather than merely

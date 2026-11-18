@@ -5,7 +5,7 @@
 // as a broken iOS build in somebody else's app.
 import 'dart:io' show Platform;
 
-import 'package:biometric_storage/biometric_storage.dart';
+import 'package:tom_biometric_storage/biometric_storage.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 

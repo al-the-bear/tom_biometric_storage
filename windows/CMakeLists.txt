@@ -4,17 +4,17 @@
 # (lib/src/biometric_storage_win32.dart).
 cmake_minimum_required(VERSION 3.14)
 
-set(PROJECT_NAME "biometric_storage")
+set(PROJECT_NAME "tom_biometric_storage")
 project(${PROJECT_NAME} LANGUAGES CXX)
 
 cmake_policy(VERSION 3.14...3.25)
 
 # This value is used when generating builds using this plugin, so it must
 # not be changed.
-set(PLUGIN_NAME "biometric_storage_plugin")
+set(PLUGIN_NAME "tom_biometric_storage_plugin")
 
 add_library(${PLUGIN_NAME} SHARED
-  "include/biometric_storage/biometric_storage_plugin_c_api.h"
+  "include/tom_biometric_storage/biometric_storage_plugin_c_api.h"
   "biometric_storage_plugin_c_api.cpp"
   "windows_hello.cpp"
   "windows_hello.h"
@@ -35,7 +35,7 @@ target_include_directories(${PLUGIN_NAME} INTERFACE
 target_link_libraries(${PLUGIN_NAME} PRIVATE flutter flutter_wrapper_plugin
   windowsapp bcrypt)
 
-set(biometric_storage_bundled_libraries
+set(tom_biometric_storage_bundled_libraries
   ""
   PARENT_SCOPE
 )

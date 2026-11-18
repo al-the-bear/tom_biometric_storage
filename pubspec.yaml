@@ -1,9 +1,12 @@
-name: biometric_storage
+name: tom_biometric_storage
 description: |
-  Secure Storage: Encrypted data store optionally secured by biometric lock with support
-  for iOS, Android, MacOS. Partial support for Linux, Windows and web (localStorage).
-version: 6.0.0-dev.10
-homepage: https://github.com/authpass/biometric_storage/
+  The Tom Framework's fork of biometric_storage: an encrypted data store
+  secured by the OS's biometric check, with Windows Hello (key-bound) and a
+  gate-only macOS form for ad-hoc signed apps, and tom_core_storage's
+  TomGatedSecretStore over it.
+version: 6.0.0-dev.10+tom.1
+homepage: https://enterprise-flutter.dev
+repository: https://github.com/al-the-bear/tom_biometric_storage
 
 environment:
   sdk: ^3.10.0
@@ -20,6 +23,8 @@ dependencies:
   ffi: '>=2.1.0 <3.0.0'
   win32: '>=6.0.1 <7.0.0'
   web: ">=0.5.0 <2.0.0"
+  # The port the Tom apps' OS unlock implements (lib/tom_gated_secret_store.dart).
+  tom_core_storage: ^0.1.3
 
 dev_dependencies:
   flutter_test:

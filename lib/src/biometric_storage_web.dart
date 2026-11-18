@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:web/web.dart' as web show window;
 
-import 'package:biometric_storage/src/biometric_storage.dart';
+import 'package:tom_biometric_storage/src/biometric_storage.dart';
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 
 /// A web implementation of the BiometricStorage plugin.

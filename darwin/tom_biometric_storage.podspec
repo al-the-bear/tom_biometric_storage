@@ -1,9 +1,9 @@
 #
 # To learn more about a Podspec see http://guides.cocoapods.org/syntax/podspec.html.
-# Run `pod lib lint biometric_storage.podspec' to validate before publishing.
+# Run `pod lib lint tom_biometric_storage.podspec' to validate before publishing.
 #
 Pod::Spec.new do |s|
-  s.name             = 'biometric_storage'
+  s.name             = 'tom_biometric_storage'
   s.version          = '0.0.1'
   s.summary          = 'Encrypted file store, optionally secured by biometric lock.'
   s.description      = <<-DESC
@@ -15,8 +15,8 @@ Downloaded by pub (not CocoaPods).
   s.license          = { :type => 'MIT', :file => '../LICENSE' }
   s.author           = { 'Herbert Poul' => 'herbert@codeux.design' }
   s.source           = { :path => '.' }
-  s.documentation_url = 'https://pub.dev/packages/biometric_storage'
-  s.source_files     = 'biometric_storage/Sources/biometric_storage/**/*.swift'
+  s.documentation_url = 'https://pub.dev/packages/tom_biometric_storage'
+  s.source_files     = 'tom_biometric_storage/Sources/tom_biometric_storage/**/*.swift'
   s.ios.dependency 'Flutter'
   s.osx.dependency 'FlutterMacOS'
   s.ios.deployment_target = '13.0'

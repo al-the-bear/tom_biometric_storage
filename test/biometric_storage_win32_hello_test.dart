@@ -2,8 +2,8 @@
 // analyzer resolves the barrel's conditional export to its stub. This file
 // runs on every host: it drives only the Windows Hello channel, never the
 // credential store.
-import 'package:biometric_storage/src/biometric_storage.dart';
-import 'package:biometric_storage/src/biometric_storage_win32.dart';
+import 'package:tom_biometric_storage/src/biometric_storage.dart';
+import 'package:tom_biometric_storage/src/biometric_storage_win32.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 

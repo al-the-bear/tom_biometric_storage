@@ -1,11 +1,11 @@
 cmake_minimum_required(VERSION 3.10)
-set(PROJECT_NAME "biometric_storage")
+set(PROJECT_NAME "tom_biometric_storage")
 project(${PROJECT_NAME} LANGUAGES CXX)
 
 set(PLUGIN_NAME "${PROJECT_NAME}_plugin")
 
 add_library(${PLUGIN_NAME} SHARED
-  "${PLUGIN_NAME}.cc"
+  "biometric_storage_plugin.cc"
 )
 
 find_package(PkgConfig REQUIRED)
@@ -23,7 +23,7 @@ target_link_libraries(${PLUGIN_NAME} PRIVATE PkgConfig::GTK)
 target_link_libraries(${PLUGIN_NAME} PRIVATE PkgConfig::LIBSECRET)
 
 # List of absolute paths to libraries that should be bundled with the plugin
-set(biometric_storage_bundled_libraries
+set(tom_biometric_storage_bundled_libraries
   ""
   PARENT_SCOPE
 )

@@ -1,4 +1,17 @@
-## Unreleased
+## 6.0.0-dev.10+tom.1
+
+The first release of the fork, `tom_biometric_storage`: upstream 6.0.0-dev.10
+(`main` at 22e3f70) with the changes below.
+
+* The package name `tom_biometric_storage` (the darwin, Linux and Windows
+  build names follow it), `lib/tom_biometric_storage.dart` as its barrel.
+* `lib/tom_gated_secret_store.dart`: `TomBiometricGatedSecretStore`,
+  `tom_core_storage`'s `TomGatedSecretStore` over the plugin. Its
+  availability is `biometric` where the check binds the item (Windows Hello,
+  a Mac app with the keychain entitlement, iOS, Android), `gateOnly` on an
+  ad-hoc signed Mac and `none` on Linux and the web; each handle is one store
+  (Windows with `windowsHello`, macOS gate-only under `<handle>.gate`, which
+  a key-bound write removes); the plugin's errors become the port's kinds.
 
 * macos: `StorageFileInitOptions.darwinGateOnly`, the gate-only form for an
   app that cannot use the data-protection keychain (an ad-hoc signed build has

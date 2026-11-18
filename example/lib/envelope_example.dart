@@ -59,7 +59,7 @@
 
 import 'dart:convert';
 
-import 'package:biometric_storage/biometric_storage.dart';
+import 'package:tom_biometric_storage/biometric_storage.dart';
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter/material.dart';
 import 'package:logging/logging.dart';
